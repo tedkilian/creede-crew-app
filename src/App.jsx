@@ -6,19 +6,24 @@ import React, { useState, useEffect, useMemo } from "react";
 const RACE_START_ISO = "2026-07-25T08:00:00-06:00"; // 8 AM Sat MDT
 const RACE_CUTOFF_ISO = "2026-07-26T23:59:00-06:00"; // 40 h later
 
+// peakElev = highest point WITHIN the segment (between the previous checkpoint and this one).
+// gainFt and lossFt are derived dynamically in segInfo() below using:
+//   gainFt = max(0, peakElev - prevElev)   — climb from start of segment up to peak
+//   lossFt = max(0, peakElev - elev)       — descent from peak down to end of segment
+// For flat/descending segments where peak ≈ start, gain is small and loss dominates.
 const SEGMENTS = [
-  { n: 0,  name: "Start – Creede",            cumMi: 0,     elev: 8786,  type: "start",   cutoff: null,                         crew: true,  dropBag: false, pacer: false, notes: "Start line behind Kentucky Belle Market. Race begins 8:00 AM Sat." },
-  { n: 1,  name: "AS1 Oso Creek",             cumMi: 15.5,  elev: 11900, type: "aid",     cutoff: "2026-07-25T13:30:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "No crew access. Water, aid food. 15.5 mi of climbing to get here." },
-  { n: 2,  name: "AS2 Spring Creek Pass",     cumMi: 24.8,  elev: 10898, type: "aid",     cutoff: "2026-07-25T16:00:00-06:00",   crew: true,  dropBag: true,  pacer: false, notes: "First crew stop. Crosses HWY 149. Drop bag #1. Runner should feel like they haven't raced yet." },
-  { n: 3,  name: "AS3 Jarosa",                cumMi: 30.35, elev: 12500, type: "aid",     cutoff: "2026-07-25T18:15:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "No crew. Short leg. Stay disciplined on the climb." },
-  { n: 4,  name: "AS4 Bent (inbound)",        cumMi: 42.4,  elev: 11600, type: "aid",     cutoff: "2026-07-25T22:00:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "No crew. Last fuel before the 13.35 mi soul-suck to Lost Trail." },
-  { n: 5,  name: "AS5 Lost Trail",            cumMi: 55.75, elev: 8786,  type: "aid",     cutoff: "2026-07-26T03:00:00-06:00",   crew: true,  dropBag: true,  pacer: true,  notes: "MAJOR CREW STOP. Pacer pick-up. Lowest point on the course. Consider 15-min nap. Swap headlamp, socks, layers." },
-  { n: 6,  name: "AS6 Bent (outbound)",       cumMi: 62.85, elev: 12000, type: "aid",     cutoff: "2026-07-26T07:00:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "Steep muddy climb back up from Lost Trail. This is the hardest cutoff to make. DNF zone." },
-  { n: 7,  name: "AS7 Jarosa (outbound)",     cumMi: 74.9,  elev: 12500, type: "aid",     cutoff: "2026-07-26T11:30:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "Dawn to mid-morning. Sun will be back. Hydrate, sunscreen, EAT." },
-  { n: 8,  name: "AS8 Spring Creek (out)",    cumMi: 80.45, elev: 10898, type: "aid",     cutoff: "2026-07-26T13:30:00-06:00",   crew: true,  dropBag: true,  pacer: true,  notes: "Crew stop. Mile 80 bonk zone — offer SAVORY food (chips, broth, potatoes). Pacer swap possible." },
-  { n: 9,  name: "AS9 Willow Creek",          cumMi: 91.85, elev: 12000, type: "aid",     cutoff: "2026-07-26T17:30:00-06:00",   crew: true,  dropBag: true,  pacer: true,  notes: "Last crew stop. 15 mi to go. Last headlamp check." },
-  { n: 10, name: "AS10 McKenzie",             cumMi: 103.05,elev: 10500, type: "aid",     cutoff: "2026-07-26T22:00:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "Last aid before finish. 4 miles home." },
-  { n: 11, name: "Finish – Creede",           cumMi: 107.1, elev: 8786,  type: "finish",  cutoff: "2026-07-26T23:59:00-06:00",   crew: true,  dropBag: false, pacer: false, notes: "Kentucky Belle Market. Buckle time." },
+  { n: 0,  name: "Start – Creede",            cumMi: 0,      elev: 8786,  peakElev: 8786,  type: "start",  cutoff: null,                         crew: true,  dropBag: false, pacer: false, notes: "Start line behind Kentucky Belle Market. Race begins 8:00 AM Sat." },
+  { n: 1,  name: "AS1 Oso Creek",             cumMi: 15.5,   elev: 11900, peakElev: 12100, type: "aid",    cutoff: "2026-07-25T13:30:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "No crew access. Water, aid food. 15.5 mi of climbing to get here." },
+  { n: 2,  name: "AS2 Spring Creek Pass",     cumMi: 24.8,   elev: 10898, peakElev: 12300, type: "aid",    cutoff: "2026-07-25T16:00:00-06:00",   crew: true,  dropBag: true,  pacer: false, notes: "First crew stop. Crosses HWY 149. Drop bag #1. Runner should feel like they haven't raced yet." },
+  { n: 3,  name: "AS3 Jarosa",                cumMi: 30.35,  elev: 12500, peakElev: 12600, type: "aid",    cutoff: "2026-07-25T18:15:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "No crew. Short leg. Stay disciplined on the climb." },
+  { n: 4,  name: "AS4 Bent (inbound)",        cumMi: 42.4,   elev: 11600, peakElev: 12800, type: "aid",    cutoff: "2026-07-25T22:00:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "No crew. Last fuel before the 13.35 mi soul-suck to Lost Trail." },
+  { n: 5,  name: "AS5 Lost Trail",            cumMi: 55.75,  elev: 8786,  peakElev: 12600, type: "aid",    cutoff: "2026-07-26T03:00:00-06:00",   crew: true,  dropBag: true,  pacer: true,  notes: "MAJOR CREW STOP. Pacer pick-up. Lowest point on the course. Consider 15-min nap. Swap headlamp, socks, layers." },
+  { n: 6,  name: "AS6 Bent (outbound)",       cumMi: 62.85,  elev: 12000, peakElev: 12000, type: "aid",    cutoff: "2026-07-26T07:00:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "Steep muddy climb back up from Lost Trail. This is the hardest cutoff to make. DNF zone." },
+  { n: 7,  name: "AS7 Jarosa (outbound)",     cumMi: 74.9,   elev: 12500, peakElev: 12800, type: "aid",    cutoff: "2026-07-26T11:30:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "Dawn to mid-morning. Sun will be back. Hydrate, sunscreen, EAT." },
+  { n: 8,  name: "AS8 Spring Creek (out)",    cumMi: 80.45,  elev: 10898, peakElev: 12500, type: "aid",    cutoff: "2026-07-26T13:30:00-06:00",   crew: true,  dropBag: true,  pacer: true,  notes: "Crew stop. Mile 80 bonk zone — offer SAVORY food (chips, broth, potatoes). Pacer swap possible." },
+  { n: 9,  name: "AS9 Willow Creek",          cumMi: 91.85,  elev: 12000, peakElev: 12600, type: "aid",    cutoff: "2026-07-26T17:30:00-06:00",   crew: true,  dropBag: true,  pacer: true,  notes: "Last crew stop. 15 mi to go. Last headlamp check." },
+  { n: 10, name: "AS10 McKenzie",             cumMi: 103.05, elev: 10500, peakElev: 12200, type: "aid",    cutoff: "2026-07-26T22:00:00-06:00",   crew: false, dropBag: false, pacer: false, notes: "Last aid before finish. 4 miles home." },
+  { n: 11, name: "Finish – Creede",           cumMi: 107.1,  elev: 8786,  peakElev: 10900, type: "finish", cutoff: "2026-07-26T23:59:00-06:00",   crew: true,  dropBag: false, pacer: false, notes: "Kentucky Belle Market. Buckle time." },
 ];
 
 // Drive legs for crew (between meet-ups)
@@ -126,6 +131,53 @@ const CREW_CHECKLISTS = {
     ]
   }
 };
+
+// ==== Segment elevation + pace helpers ====
+// Returns { segMi, segKm, gainFt, gainM, lossFt, lossM, reqPaceMinMi, reqPaceMinKm }
+// gainFt = climb from segment start up to segment peak
+// lossFt = descent from segment peak down to segment end
+// reqPace = time available for the segment divided by segment distance
+//   Time available = cutoff of THIS segment − cutoff of PREVIOUS segment (or race start for seg 1)
+//   For the goal-pace variant we use goalHours distributed pro-rata by cutoff window.
+function segInfo(seg, goalHours) {
+  if (seg.n === 0) return null; // start has no "segment to run"
+  const prev = SEGMENTS.find(s => s.n === seg.n - 1);
+  if (!prev) return null;
+
+  const segMi  = seg.cumMi - prev.cumMi;
+  const segKm  = segMi * 1.609344;
+
+  // Elevation: gain = start→peak, loss = peak→end
+  const gainFt = Math.max(0, seg.peakElev - prev.elev);
+  const lossFt = Math.max(0, seg.peakElev - seg.elev);
+  const gainM  = Math.round(gainFt * 0.3048);
+  const lossM  = Math.round(lossFt * 0.3048);
+
+  // Required pace to hit CUTOFF on time
+  const cutoffMs   = seg.cutoff ? new Date(seg.cutoff) - new Date(RACE_START_ISO) : null;
+  const prevCutoff = prev.cutoff ? new Date(prev.cutoff) - new Date(RACE_START_ISO)
+                                 : 0; // race start
+  const windowMs   = cutoffMs != null ? cutoffMs - prevCutoff : null;
+  const reqPaceMinMi = windowMs != null && segMi > 0
+    ? (windowMs / 60000) / segMi : null;
+  const reqPaceMinKm = reqPaceMinMi != null ? reqPaceMinMi / 1.609344 : null;
+
+  // Goal pace: distribute goalHours across segments proportional to cutoff window
+  const totalWindowMs = 40 * 60 * 60 * 1000;
+  const goalPaceMinMi = windowMs != null && segMi > 0
+    ? (windowMs / totalWindowMs) * (goalHours * 60) / segMi : null;
+  const goalPaceMinKm = goalPaceMinMi != null ? goalPaceMinMi / 1.609344 : null;
+
+  return { segMi, segKm, gainFt, gainM, lossFt, lossM,
+           reqPaceMinMi, reqPaceMinKm, goalPaceMinMi, goalPaceMinKm };
+}
+
+function fmtPace(minPerUnit, unit) {
+  if (minPerUnit == null || isNaN(minPerUnit) || !isFinite(minPerUnit)) return "—";
+  const m = Math.floor(minPerUnit);
+  const s = Math.round((minPerUnit - m) * 60);
+  return `${m}:${s.toString().padStart(2,"0")} /${unit === "km" ? "km" : "mi"}`;
+}
 
 // ==== Persistent storage keys ====
 const K = {
@@ -612,6 +664,7 @@ export default function CreedeCrewApp() {
             clearSplit={clearSplit}
             cutoffStatus={cutoffStatus}
             unit={unit}
+            goalHours={goalHours}
             close={() => setSelectedSeg(null)}
           />
         )}
@@ -699,6 +752,7 @@ function TrackTab({ unit, splits, segEtas, projection, now, cutoffStatus, onOpen
           const status = cutoffStatus(s);
           const done = !!splits[s.n];
           const isNext = !done && lastSeg && s.n === lastSeg.n + 1;
+          const info = segInfo(s, goalHours);
           const cls = ["seg"];
           if (s.crew) cls.push("crew");
           if (s.pacer) cls.push("pacer");
@@ -709,7 +763,7 @@ function TrackTab({ unit, splits, segEtas, projection, now, cutoffStatus, onOpen
             <div key={s.n} className={cls.join(" ")} onClick={() => onOpenSeg(s)}>
               <div className="seg-head">
                 <div>
-                  <div className="seg-n">#{String(s.n).padStart(2, "0")}</div>
+                  <div className="seg-n">#{String(s.n).padStart(2, "0")} {info ? `· ${unit === "km" ? info.segKm.toFixed(1)+"km" : info.segMi.toFixed(1)+"mi"} leg` : ""}</div>
                   <div className="seg-name">{s.name}</div>
                 </div>
                 <div className="seg-mi">{fmtDist(s.cumMi, unit)}</div>
@@ -723,9 +777,17 @@ function TrackTab({ unit, splits, segEtas, projection, now, cutoffStatus, onOpen
                 {status && <span className={`chip ${status.kind}`}>{status.label}</span>}
               </div>
               <div className="seg-meta">
-                <div>Elev <b>{fmtElev(s.elev, unit)}</b></div>
-                {s.cutoff && <div>Cutoff <b>{fmtTime(s.cutoff)}</b></div>}
+                <div>End <b>{fmtElev(s.elev, unit)}</b></div>
+                {info && <div>↑<b>{unit === "km" ? info.gainM.toLocaleString()+"m" : info.gainFt.toLocaleString()+"ft"}</b></div>}
+                {info && <div>↓<b>{unit === "km" ? info.lossM.toLocaleString()+"m" : info.lossFt.toLocaleString()+"ft"}</b></div>}
+                {info && <div>Peak <b>{fmtElev(s.peakElev, unit)}</b></div>}
               </div>
+              {info && (
+                <div className="seg-meta" style={{ marginTop: 4, borderTop: "1px dashed var(--line)", paddingTop: 4 }}>
+                  <div>Cutoff pace <b style={{ color: "var(--caution)" }}>{fmtPace(unit === "km" ? info.reqPaceMinKm : info.reqPaceMinMi, unit)}</b></div>
+                  <div>Goal pace <b style={{ color: "var(--mint)" }}>{fmtPace(unit === "km" ? info.goalPaceMinKm : info.goalPaceMinMi, unit)}</b></div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -735,12 +797,13 @@ function TrackTab({ unit, splits, segEtas, projection, now, cutoffStatus, onOpen
 }
 
 // ==== SEG DRAWER ====
-function SegDrawer({ seg, splits, segEtas, notes, saveNotes, recordSplit, clearSplit, cutoffStatus, unit, close }) {
+function SegDrawer({ seg, splits, segEtas, notes, saveNotes, recordSplit, clearSplit, cutoffStatus, unit, goalHours, close }) {
   const [manualTime, setManualTime] = useState("");
   const [localNote, setLocalNote] = useState(notes[seg.n] || "");
   const status = cutoffStatus(seg);
   const checklist = CREW_CHECKLISTS[seg.n];
   const hasSplit = !!splits[seg.n];
+  const info = segInfo(seg, goalHours);
 
   useEffect(() => { setLocalNote(notes[seg.n] || ""); }, [seg.n, notes]);
 
@@ -750,7 +813,41 @@ function SegDrawer({ seg, splits, segEtas, notes, saveNotes, recordSplit, clearS
       <div className="drawer">
         <div className="drawer-handle"></div>
         <h2>{seg.name}</h2>
-        <div className="sub">Mile {seg.cumMi.toFixed(2)} · {fmtDist(seg.cumMi, unit)} · {fmtElev(seg.elev, unit)}</div>
+        <div className="sub">
+          {info
+            ? `Leg: ${unit === "km" ? info.segKm.toFixed(1)+"km" : info.segMi.toFixed(1)+"mi"} · End: ${fmtElev(seg.elev, unit)} · Peak: ${fmtElev(seg.peakElev, unit)}`
+            : `${fmtDist(seg.cumMi, unit)} cumulative · ${fmtElev(seg.elev, unit)}`
+          }
+        </div>
+
+        {info && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8, margin: "10px 0" }}>
+            <div className="kpi">
+              <div className="kpi-l">↑ Gain</div>
+              <div className="kpi-v" style={{ fontSize: 14 }}>
+                {unit === "km" ? `${info.gainM.toLocaleString()} m` : `${info.gainFt.toLocaleString()} ft`}
+              </div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-l">↓ Loss</div>
+              <div className="kpi-v" style={{ fontSize: 14 }}>
+                {unit === "km" ? `${info.lossM.toLocaleString()} m` : `${info.lossFt.toLocaleString()} ft`}
+              </div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-l">Cutoff pace</div>
+              <div className="kpi-v warn" style={{ fontSize: 14 }}>
+                {fmtPace(unit === "km" ? info.reqPaceMinKm : info.reqPaceMinMi, unit)}
+              </div>
+            </div>
+            <div className="kpi">
+              <div className="kpi-l">Goal pace ({goalHours}h)</div>
+              <div className="kpi-v go" style={{ fontSize: 14 }}>
+                {fmtPace(unit === "km" ? info.goalPaceMinKm : info.goalPaceMinMi, unit)}
+              </div>
+            </div>
+          </div>
+        )}
 
         {seg.cutoff && status && (
           <div className={`banner ${status.kind === "safe" || status.kind === "made" ? "info" : status.kind === "tight" ? "warn" : "danger"}`}>
